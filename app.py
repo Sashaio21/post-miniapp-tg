@@ -26,9 +26,19 @@ import zipfile
 from pathlib import Path
 
 import requests
+from urllib.parse import quote
+
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
+from jinja2 import Environment, FileSystemLoader
+
 from generate import (
+    ASSETS_DIR,
+    FORMATS_GITHUB,
+    STARTUP_TELEGRAM_H,
+    STARTUP_TELEGRAM_W,
+    TEMPLATES_DIR,
+    to_data_uri,
     MANUAL_JSON_EXAMPLE,
     MANUAL_JSON_EXAMPLE_STARTUP,
     RING_ASSET,
@@ -294,6 +304,74 @@ def send_to_chat():
     except requests.RequestException as e:
         return jsonify(ok=False, error=str(e)), 502
     return jsonify(ok=True)
+
+
+# ======================= ПРЕДПРОСМОТР (без Chromium) =======================
+# Шаблоны — это обычный HTML, поэтому превью рисуется прямо в браузере из
+# Jinja-рендера. Картинки PNG (Playwright) делаются только в /generate.
+_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
+_RING_URI = to_data_uri(RING_ASSET) if RING_ASSET.exists() else None
+_PLACEHOLDER = "data:image/svg+xml;utf8," + quote(
+    "<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'>"
+    "<rect width='800' height='600' fill='#23221a'/>"
+    "<text x='400' y='310' fill='#8a8676' font-size='40' text-anchor='middle' "
+    "font-family='sans-serif'>Фото проекта</text></svg>")
+PREVIEW_MAX_ITEMS = 5
+
+
+def _lite(html: str) -> str:
+    """Кольцо (~260 КБ base64) заменяем короткой ссылкой — браузер кэширует."""
+    return html.replace(_RING_URI, "/assets/" + RING_ASSET.name) if _RING_URI else html
+
+
+@app.get("/assets/<path:filename>")
+def serve_asset(filename):
+    return send_from_directory(ASSETS_DIR, filename)
+
+
+@app.post("/preview")
+def preview():
+    b = request.get_json(silent=True) or {}
+    card_type = "startup" if b.get("card_type") == "startup" else "github"
+    mode = b.get("mode", "single")
+    raw = (b.get("json_data") or "").strip()
+    photo = b.get("photo") if str(b.get("photo", "")).startswith("data:image/") else _PLACEHOLDER
+    if not raw:
+        return jsonify(ok=True, cards=[])
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return jsonify(ok=False, error=f"Невалидный JSON: {e}")
+
+    cards = []  # (подпись, шаблон, контекст, ширина, высота)
+    try:
+        if card_type == "startup":
+            if isinstance(data, list):
+                raise ManualDataError("Для стартапа нужен один JSON-объект, не список.")
+            pkg = build_startup_package(data)
+            cards.append(("Telegram-обложка", "startup_telegram_1080x1080.html.j2",
+                          pkg["telegram"], STARTUP_TELEGRAM_W, STARTUP_TELEGRAM_H))
+            for i, sl in enumerate(pkg["slides"], start=1):
+                cards.append((f"Слайд {i}/7", sl["_template"], sl, sl["_w"], sl["_h"]))
+        else:
+            if mode == "batch":
+                items = parse_batch_items(raw)[:PREVIEW_MAX_ITEMS]
+            elif isinstance(data, list):
+                raise ManualDataError("Это список — переключитесь на «Подборка».")
+            else:
+                items = [data]
+            for n, item in enumerate(items, start=1):
+                ctx = build_context_manual(item, RING_ASSET, n, len(items), mode == "batch")
+                ctx["photo_data_uri"] = photo
+                for name, tpl, w, h in FORMATS_GITHUB:
+                    cards.append((f"{ctx['project_name']} · {name}", tpl, ctx, w, h))
+        out = [{"label": lb, "w": w, "h": h, "html": _lite(_env.get_template(tpl).render(**ctx))}
+               for lb, tpl, ctx, w, h in cards]
+    except ManualDataError as e:
+        return jsonify(ok=False, error=str(e))
+    except Exception as e:  # noqa: BLE001 — неполный JSON не должен ронять превью
+        return jsonify(ok=False, error=f"Не удалось построить превью: {e}")
+    return jsonify(ok=True, cards=out)
 
 
 @app.get("/output/<path:filename>")
