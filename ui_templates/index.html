@@ -124,6 +124,7 @@
   .tpl-item.on{ border-color:var(--brick); background:rgba(166,64,44,.12); }
   .tpl-name{ flex:1; font-size:14px; }
   .tpl-dims{ font:500 12px 'JetBrains Mono',monospace; color:var(--paper-70); white-space:nowrap; }
+  .tabs.type-tabs{ display:none; }   /* тип определяется шаблоном — рубрики не показываем */
 </style>
 </head>
 <body>
@@ -444,7 +445,7 @@
 })();
 </script>
 <script>
-// ===== Список шаблонов: названия из каталога, выбор галочками =====
+// ===== Единый список шаблонов. Тип данных (GitHub / стартап) определяется выбранным шаблоном =====
 (function(){
   const CATALOG = {{ templates_catalog|tojson }};
   const state = {};                                  // {github:Set, startup:Set}
@@ -455,15 +456,21 @@
         ta = document.getElementById('json_data');
 
   function render(){
-    const g = typeField.value; list.innerHTML = '';
-    CATALOG.filter(t => t.group===g).forEach(t => {
-      const lb = document.createElement('label'); lb.className = 'tpl-item' + (state[g].has(t.id) ? ' on' : '');
-      lb.innerHTML = '<input type="checkbox" name="templates" value="'+t.id+'"'+(state[g].has(t.id)?' checked':'')+'>'
+    const cur = typeField.value; list.innerHTML = '';
+    CATALOG.forEach(t => {
+      const on = t.group===cur && state[cur].has(t.id);
+      const lb = document.createElement('label'); lb.className = 'tpl-item' + (on ? ' on' : '');
+      lb.innerHTML = '<input type="checkbox" name="templates" value="'+t.id+'"'+(on?' checked':'')+'>'
                    + '<span class="tpl-name">'+t.name+'</span><span class="tpl-dims">'+t.dims+'</span>';
       lb.querySelector('input').addEventListener('change', e => {
-        e.target.checked ? state[g].add(t.id) : state[g].delete(t.id);
+        if(t.group !== typeField.value){                 // шаблон другого типа данных → переключаем тип, выбираем только его
+          state[t.group] = new Set([t.id]);
+          document.querySelector('[data-type="'+t.group+'"]').click();   // старая логика: подсказки, заголовок, пример
+          return;                                        // render() и превью вызовет обработчик клика
+        }
+        e.target.checked ? state[cur].add(t.id) : state[cur].delete(t.id);
         lb.classList.toggle('on', e.target.checked);
-        ta.dispatchEvent(new Event('input'));          // обновить превью
+        ta.dispatchEvent(new Event('input'));            // обновить превью
       });
       list.appendChild(lb);
     });
