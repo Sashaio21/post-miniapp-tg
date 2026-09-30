@@ -82,24 +82,14 @@
     <a class="zip-btn" href="/output/{{ zip_file }}" download>Скачать всё (.zip)</a>
   </div>
 
-  <div class="tg-block">
-    <div class="section-title">Telegram-обложка (1080×1080)</div>
-    <div class="tg-card">
-      <div class="thumb"><img src="/output/{{ telegram_file }}" alt="telegram"></div>
-      <div class="card-body">
-        <a class="download" href="/output/{{ telegram_file }}" download>Скачать PNG</a>
-      </div>
-    </div>
-  </div>
-
-  <div class="section-title">Карусель для TikTok / Reels / Stories (1080×1350, 7 слайдов)</div>
   <div class="grid">
-    {% for f in slide_files %}
+    {% for c in cards %}
     <div class="card">
-      <div class="thumb"><img src="/output/{{ f }}" alt="slide {{ loop.index }}"></div>
+      <div class="thumb"><img src="/output/{{ c.file }}" alt="{{ c.label }}"></div>
       <div class="card-body">
-        <div class="card-title">Слайд {{ loop.index }} / {{ slide_files|length }}</div>
-        <a class="download" href="/output/{{ f }}" download>Скачать PNG</a>
+        <div class="card-title">{{ c.label }}</div>
+        <div class="card-dims">{{ c.dims }}</div>
+        <a class="download" href="/output/{{ c.file }}" download>Скачать PNG</a>
       </div>
     </div>
     {% endfor %}

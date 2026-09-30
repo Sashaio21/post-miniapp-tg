@@ -64,6 +64,68 @@ STARTUP_TELEGRAM_W, STARTUP_TELEGRAM_H = 1080, 1080
 N_CONTENT_SLIDES = 5          # слайды 2..6 — «кто/контекст/цифра/твист/что дальше»
 N_TOTAL_SLIDES = N_CONTENT_SLIDES + 2  # + обложка (1) + rebuild (7) = 7
 
+# ---------------------------------------------------------------------
+# Каталог шаблонов: у каждого есть id, название и размер. Его показывает UI,
+# по нему же выбирается, какие карточки рендерить. default=False — шаблон
+# есть в списке, но по умолчанию не отмечен.
+# ---------------------------------------------------------------------
+TEMPLATE_CATALOG = [
+    # --- GitHub-проект (нужны JSON + фото) ---
+    {"id": "gh_story",    "group": "github",  "name": "Сторис",           "file": "story_1080x1920.html.j2",             "w": 1080, "h": 1920, "suffix": "story",    "default": True},
+    {"id": "gh_post",     "group": "github",  "name": "Пост в ленту",     "file": "post_1080x1350.html.j2",              "w": 1080, "h": 1350, "suffix": "post",     "default": True},
+    {"id": "gh_telegram", "group": "github",  "name": "Telegram-пост",    "file": "telegram_1080x1080.html.j2",          "w": 1080, "h": 1080, "suffix": "telegram", "default": True},
+    # --- Провал стартапа (нужен один JSON) ---
+    {"id": "st_telegram", "group": "startup", "name": "Обложка для Telegram",       "file": "startup_telegram_1080x1080.html.j2", "w": 1080, "h": 1080, "default": True},
+    {"id": "st_post",     "group": "startup", "name": "Пост-обложка (лента)",       "file": "startup_post_1080x1350.html.j2",     "w": 1080, "h": 1350, "default": False},
+    {"id": "st_story",    "group": "startup", "name": "Сторис-обложка",             "file": "startup_story_1080x1920.html.j2",    "w": 1080, "h": 1920, "default": False},
+    {"id": "st_cover",    "group": "startup", "name": "Карусель · обложка-хук",     "file": "startup_carousel_cover.html.j2",     "w": 1080, "h": 1350, "default": True},
+    {"id": "st_content",  "group": "startup", "name": "Карусель · слайды 2–6 (×5)", "file": "startup_carousel_content.html.j2",   "w": 1080, "h": 1350, "default": True},
+    {"id": "st_rebuild",  "group": "startup", "name": "Карусель · ребилд-идея",     "file": "startup_carousel_rebuild.html.j2",   "w": 1080, "h": 1350, "default": True},
+]
+for _t in TEMPLATE_CATALOG:
+    _t["dims"] = f"{_t['w']} × {_t['h']}"
+
+
+def catalog_ids(group: str) -> list:
+    return [t["id"] for t in TEMPLATE_CATALOG if t["group"] == group]
+
+
+def default_ids(group: str) -> list:
+    return [t["id"] for t in TEMPLATE_CATALOG if t["group"] == group and t["default"]]
+
+
+def github_templates(ids=None) -> list:
+    """Выбранные GitHub-шаблоны (записи каталога) в порядке каталога."""
+    ids = set(ids) if ids is not None else set(default_ids("github"))
+    return [t for t in TEMPLATE_CATALOG if t["group"] == "github" and t["id"] in ids]
+
+
+def github_formats(ids=None) -> list:
+    """То же в формате FORMATS_GITHUB для render_all(): (имя, файл, w, h)."""
+    return [(t["suffix"], t["file"], t["w"], t["h"]) for t in github_templates(ids)]
+
+
+def startup_items(pkg: dict, ids=None) -> list:
+    """Раскладывает пакет стартапа на карточки по выбранным шаблонам."""
+    ids = set(ids) if ids is not None else set(default_ids("startup"))
+    cat = {t["id"]: t for t in TEMPLATE_CATALOG if t["group"] == "startup"}
+    items, slides = [], pkg["slides"]
+
+    def add(tid, label, ctx, suffix, tpl=None, w=None, h=None):
+        t = cat[tid]
+        items.append({"id": tid, "label": label, "template": tpl or t["file"], "ctx": ctx,
+                      "w": w or t["w"], "h": h or t["h"], "suffix": suffix})
+
+    for tid, suffix in (("st_telegram", "telegram"), ("st_post", "post"), ("st_story", "story")):
+        if tid in ids:
+            add(tid, cat[tid]["name"], pkg["telegram"], suffix)
+    n = len(slides)
+    for i, sl in enumerate(slides, start=1):
+        tid = "st_cover" if i == 1 else "st_rebuild" if i == n else "st_content"
+        if tid in ids:
+            add(tid, f"Слайд {i}/{n}", sl, sl["_out_suffix"], sl["_template"], sl["_w"], sl["_h"])
+    return items
+
 
 class RepoFetchError(Exception):
     """Не удалось получить данные репозитория с GitHub."""
@@ -447,40 +509,29 @@ def build_startup_package(data: dict) -> dict:
     return {"slug": slug, "telegram": telegram_ctx, "slides": slides}
 
 
-def render_startup_package(pkg: dict, out_dir: Path) -> list:
-    """Рендерит telegram-обложку + все 7 слайдов карусели. Возвращает список путей."""
+def render_startup_items(items: list, out_dir: Path, slug: str) -> list:
+    """Рендерит выбранные карточки стартапа в PNG. Возвращает пути в порядке items."""
     env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
     out_dir.mkdir(parents=True, exist_ok=True)
-    slug = pkg["slug"]
     out_paths = []
-
     with sync_playwright() as p:
         browser = p.chromium.launch()
-
-        # telegram-обложка
-        html = env.get_template("startup_telegram_1080x1080.html.j2").render(**pkg["telegram"])
-        page = browser.new_page(viewport={"width": STARTUP_TELEGRAM_W, "height": STARTUP_TELEGRAM_H}, device_scale_factor=2)
-        page.set_content(html, wait_until="networkidle")
-        out_path = out_dir / f"{slug}-telegram.png"
-        page.locator(".card").screenshot(path=str(out_path))
-        page.close()
-        out_paths.append(out_path)
-        print(f"  ✓ {out_path}")
-
-        # 7 слайдов карусели
-        for slide in pkg["slides"]:
-            html = env.get_template(slide["_template"]).render(**slide)
-            page = browser.new_page(viewport={"width": slide["_w"], "height": slide["_h"]}, device_scale_factor=2)
+        for it in items:
+            html = env.get_template(it["template"]).render(**it["ctx"])
+            page = browser.new_page(viewport={"width": it["w"], "height": it["h"]}, device_scale_factor=2)
             page.set_content(html, wait_until="networkidle")
-            out_path = out_dir / f"{slug}-{slide['_out_suffix']}.png"
+            out_path = out_dir / f"{slug}-{it['suffix']}.png"
             page.locator(".card").screenshot(path=str(out_path))
             page.close()
             out_paths.append(out_path)
             print(f"  ✓ {out_path}")
-
         browser.close()
-
     return out_paths
+
+
+def render_startup_package(pkg: dict, out_dir: Path, selected=None) -> list:
+    """Рендерит выбранные шаблоны стартапа (по умолчанию — обложка + 7 слайдов)."""
+    return render_startup_items(startup_items(pkg, selected), out_dir, pkg["slug"])
 
 
 def main() -> None:

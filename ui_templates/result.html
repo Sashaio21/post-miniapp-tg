@@ -86,32 +86,16 @@
     <div class="set-title"><span class="n">{{ '%02d'|format(s.index) }}/{{ '%02d'|format(s.total) }}</span> · {{ s.label }}</div>
     {% endif %}
     <div class="grid">
+      {% for c in s.cards %}
       <div class="card">
-        <div class="thumb"><img src="/output/{{ s.files.story }}" alt="story"></div>
+        <div class="thumb"><img src="/output/{{ c.file }}" alt="{{ c.label }}"></div>
         <div class="card-body">
-          <div class="card-title">Сторис</div>
-          <div class="card-dims">1080 × 1920</div>
-          <a class="download" href="/output/{{ s.files.story }}" download>Скачать PNG</a>
+          <div class="card-title">{{ c.label }}</div>
+          <div class="card-dims">{{ c.dims }}</div>
+          <a class="download" href="/output/{{ c.file }}" download>Скачать PNG</a>
         </div>
       </div>
-
-      <div class="card">
-        <div class="thumb"><img src="/output/{{ s.files.post }}" alt="post"></div>
-        <div class="card-body">
-          <div class="card-title">Пост в ленту</div>
-          <div class="card-dims">1080 × 1350</div>
-          <a class="download" href="/output/{{ s.files.post }}" download>Скачать PNG</a>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="thumb"><img src="/output/{{ s.files.telegram }}" alt="telegram"></div>
-        <div class="card-body">
-          <div class="card-title">Telegram</div>
-          <div class="card-dims">1080 × 1080</div>
-          <a class="download" href="/output/{{ s.files.telegram }}" download>Скачать PNG</a>
-        </div>
-      </div>
+      {% endfor %}
     </div>
   </div>
   {% endfor %}

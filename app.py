@@ -34,7 +34,13 @@ from jinja2 import Environment, FileSystemLoader
 
 from generate import (
     ASSETS_DIR,
-    FORMATS_GITHUB,
+    TEMPLATE_CATALOG,
+    catalog_ids,
+    default_ids,
+    github_formats,
+    github_templates,
+    render_startup_items,
+    startup_items,
     STARTUP_TELEGRAM_H,
     STARTUP_TELEGRAM_W,
     TEMPLATES_DIR,
@@ -88,7 +94,17 @@ def _render_index(**kwargs):
     они нужны шаблону всегда (в том числе в JS), не только при первом GET."""
     kwargs.setdefault("json_examples", _JSON_EXAMPLES)
     kwargs.setdefault("batch_example", _BATCH_EXAMPLE_STR)
+    kwargs.setdefault("templates_catalog", TEMPLATE_CATALOG)
+    kwargs.setdefault("selected_templates", [])
     return render_template("index.html", **kwargs)
+
+
+def _sel(ids, group):
+    """Оставляет только id шаблонов нужной группы. None (ничего не пришло) → по умолчанию."""
+    if not ids:
+        return None
+    valid = set(catalog_ids(group))
+    return [i for i in ids if i in valid]
 
 
 def _ext_ok(filename: str) -> bool:
@@ -114,12 +130,16 @@ def generate_view():
     mode = request.form.get("mode", "single") if card_type == "github" else "startup"
 
     json_raw = request.form.get("json_data", "").strip()
-    form_state = {"json_data": json_raw, "mode": mode, "card_type": card_type}
+    sel = _sel(request.form.getlist("templates"), card_type)
+    form_state = {"json_data": json_raw, "mode": mode, "card_type": card_type, "selected_templates": sel or []}
 
     if not json_raw:
         return _render_index(error="Вставьте JSON с данными карточки.", **form_state), 400
     if not RING_ASSET.exists():
         return _render_index(error="Не найден ассет кольца в assets/ — переустановите проект.", **form_state), 500
+
+    if not sel:
+        return _render_index(error="Отметьте хотя бы один шаблон в списке.", **form_state), 400
 
     job_id = uuid.uuid4().hex[:8]
     job_out_dir = OUTPUT_DIR / job_id
@@ -142,22 +162,22 @@ def generate_view():
             return _render_index(error=str(e), **form_state), 400
 
         try:
+            items = startup_items(pkg, sel)
             with RENDER_SLOTS:
-                paths = render_startup_package(pkg, job_out_dir)
+                paths = render_startup_items(items, job_out_dir, pkg["slug"])
         except Exception as e:
             return _render_index(error=f"Ошибка рендера: {e}", **form_state), 500
 
         zip_path = job_out_dir / "enso-cards.zip"
         _make_zip(paths, zip_path)
 
-        slide_files = [f"{job_id}/{p.name}" for p in paths[1:]]  # без telegram — она отдельно
-        telegram_file = f"{job_id}/{paths[0].name}"
+        cards = [{"file": f"{job_id}/{p.name}", "label": it["label"], "dims": f"{it['w']} × {it['h']}"}
+                 for p, it in zip(paths, items)]
 
         return render_template(
             "result_startup.html",
             project_name=pkg["slug"],
-            telegram_file=telegram_file,
-            slide_files=slide_files,
+            cards=cards,
             zip_file=f"{job_id}/enso-cards.zip",
         )
 
@@ -196,18 +216,14 @@ def generate_view():
             slug = f"{i:02d}-{context['project_name'].lower().replace(' ', '-')}"
             try:
                 with RENDER_SLOTS:
-                    render_all(context, job_out_dir, slug)
+                    render_all(context, job_out_dir, slug, formats=github_formats(sel))
             except Exception as e:
                 return _render_index(error=f"Ошибка рендера (элемент №{i}): {e}", **form_state), 500
 
-            files = {
-                "story": f"{job_id}/{slug}-story.png",
-                "post": f"{job_id}/{slug}-post.png",
-                "telegram": f"{job_id}/{slug}-telegram.png",
-            }
-            for key in files:
-                all_files.append(job_out_dir / f"{slug}-{key}.png")
-            sets.append({"label": context["project_name"], "index": i, "total": total, "files": files})
+            cards = [{"file": f"{job_id}/{slug}-{t['suffix']}.png", "label": t["name"], "dims": t["dims"]}
+                     for t in github_templates(sel)]
+            all_files += [job_out_dir / Path(c["file"]).name for c in cards]
+            sets.append({"label": context["project_name"], "index": i, "total": total, "cards": cards})
 
         zip_path = job_out_dir / "enso-cards.zip"
         _make_zip(all_files, zip_path)
@@ -248,22 +264,19 @@ def generate_view():
     slug = f"{context['project_name'].lower().replace(' ', '-')}-{job_id}"
     try:
         with RENDER_SLOTS:
-            render_all(context, job_out_dir, slug)
+            render_all(context, job_out_dir, slug, formats=github_formats(sel))
     except Exception as e:
         return _render_index(error=f"Ошибка рендера: {e}", **form_state), 500
 
-    files = {
-        "story": f"{job_id}/{slug}-story.png",
-        "post": f"{job_id}/{slug}-post.png",
-        "telegram": f"{job_id}/{slug}-telegram.png",
-    }
+    cards = [{"file": f"{job_id}/{slug}-{t['suffix']}.png", "label": t["name"], "dims": t["dims"]}
+             for t in github_templates(sel)]
     zip_path = job_out_dir / "enso-cards.zip"
-    _make_zip([job_out_dir / f"{slug}-{k}.png" for k in files], zip_path)
+    _make_zip([job_out_dir / Path(c["file"]).name for c in cards], zip_path)
 
     return render_template(
         "result.html",
         is_batch=False,
-        sets=[{"label": context["project_name"], "index": 1, "total": 1, "files": files}],
+        sets=[{"label": context["project_name"], "index": 1, "total": 1, "cards": cards}],
         zip_file=f"{job_id}/enso-cards.zip",
     )
 
@@ -335,6 +348,8 @@ def preview():
     card_type = "startup" if b.get("card_type") == "startup" else "github"
     mode = b.get("mode", "single")
     raw = (b.get("json_data") or "").strip()
+    sel = b.get("templates")
+    sel = _sel(sel, card_type) if sel else ([] if sel == [] else None)
     photo = b.get("photo") if str(b.get("photo", "")).startswith("data:image/") else _PLACEHOLDER
     if not raw:
         return jsonify(ok=True, cards=[])
@@ -349,10 +364,8 @@ def preview():
             if isinstance(data, list):
                 raise ManualDataError("Для стартапа нужен один JSON-объект, не список.")
             pkg = build_startup_package(data)
-            cards.append(("Telegram-обложка", "startup_telegram_1080x1080.html.j2",
-                          pkg["telegram"], STARTUP_TELEGRAM_W, STARTUP_TELEGRAM_H))
-            for i, sl in enumerate(pkg["slides"], start=1):
-                cards.append((f"Слайд {i}/7", sl["_template"], sl, sl["_w"], sl["_h"]))
+            for it in startup_items(pkg, sel):
+                cards.append((it["label"], it["template"], it["ctx"], it["w"], it["h"]))
         else:
             if mode == "batch":
                 items = parse_batch_items(raw)[:PREVIEW_MAX_ITEMS]
@@ -363,8 +376,8 @@ def preview():
             for n, item in enumerate(items, start=1):
                 ctx = build_context_manual(item, RING_ASSET, n, len(items), mode == "batch")
                 ctx["photo_data_uri"] = photo
-                for name, tpl, w, h in FORMATS_GITHUB:
-                    cards.append((f"{ctx['project_name']} · {name}", tpl, ctx, w, h))
+                for t in github_templates(sel):
+                    cards.append((f"{ctx['project_name']} · {t['name']}", t["file"], ctx, t["w"], t["h"]))
         out = [{"label": lb, "w": w, "h": h, "html": _lite(_env.get_template(tpl).render(**ctx))}
                for lb, tpl, ctx, w, h in cards]
     except ManualDataError as e:

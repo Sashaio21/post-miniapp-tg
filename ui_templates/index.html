@@ -118,6 +118,12 @@
   .pv-frame iframe{ position:absolute; left:0; top:0; border:0; transform-origin:0 0; pointer-events:none; }
   .pv-card figcaption{ font-size:12px; color:var(--paper-70); margin-top:6px; }
   .pv-note{ font-size:12px; color:var(--paper-70); margin-top:4px; }
+  .tpl-list{ display:flex; flex-direction:column; gap:8px; }
+  .tpl-item{ display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid var(--paper-14); border-radius:12px; background:rgba(236,230,216,.05); cursor:pointer; }
+  .tpl-item input{ width:18px; height:18px; accent-color:var(--brick); flex:0 0 auto; }
+  .tpl-item.on{ border-color:var(--brick); background:rgba(166,64,44,.12); }
+  .tpl-name{ flex:1; font-size:14px; }
+  .tpl-dims{ font:500 12px 'JetBrains Mono',monospace; color:var(--paper-70); white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -174,6 +180,11 @@
         строк и выделения цветом — как в примере ниже. Результат — 8 картинок:
         telegram-обложка + 7 слайдов карусели, ничего больше вводить не нужно.
       </div>
+    </div>
+
+    <div class="field" id="tplField">
+      <label>Шаблоны</label>
+      <div class="tpl-list" id="tplList"></div>
     </div>
 
     <div class="mode-pane" id="paneSinglePhoto">
@@ -387,7 +398,8 @@
       const r = await fetch('/preview', {method:'POST', signal:ctrl.signal,
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({card_type: $('typeField').value, mode: $('modeField').value,
-                              json_data: raw, photo: photoUri})});
+                              json_data: raw, photo: photoUri,
+                              templates: window.__selTpl ? window.__selTpl() : null})});
       const d = await r.json();
       status.textContent = '';
       if(!d.ok){ err.textContent = d.error; return; }   // оставляем прошлое превью, показываем причину
@@ -429,6 +441,36 @@
   ta.addEventListener('input', schedule);
   document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setTimeout(schedule, 0)));
   if(ta.value.trim()) schedule();
+})();
+</script>
+<script>
+// ===== Список шаблонов: названия из каталога, выбор галочками =====
+(function(){
+  const CATALOG = {{ templates_catalog|tojson }};
+  const state = {};                                  // {github:Set, startup:Set}
+  ['github','startup'].forEach(g => state[g] = new Set(CATALOG.filter(t => t.group===g && t.default).map(t => t.id)));
+  const preset = {{ selected_templates|tojson }};
+  if(preset.length){ const g = CATALOG.find(t => t.id===preset[0]).group; state[g] = new Set(preset); }
+  const list = document.getElementById('tplList'), typeField = document.getElementById('typeField'),
+        ta = document.getElementById('json_data');
+
+  function render(){
+    const g = typeField.value; list.innerHTML = '';
+    CATALOG.filter(t => t.group===g).forEach(t => {
+      const lb = document.createElement('label'); lb.className = 'tpl-item' + (state[g].has(t.id) ? ' on' : '');
+      lb.innerHTML = '<input type="checkbox" name="templates" value="'+t.id+'"'+(state[g].has(t.id)?' checked':'')+'>'
+                   + '<span class="tpl-name">'+t.name+'</span><span class="tpl-dims">'+t.dims+'</span>';
+      lb.querySelector('input').addEventListener('change', e => {
+        e.target.checked ? state[g].add(t.id) : state[g].delete(t.id);
+        lb.classList.toggle('on', e.target.checked);
+        ta.dispatchEvent(new Event('input'));          // обновить превью
+      });
+      list.appendChild(lb);
+    });
+  }
+  window.__selTpl = () => Array.from(state[typeField.value]);
+  document.querySelectorAll('[data-type]').forEach(t => t.addEventListener('click', () => setTimeout(render, 0)));
+  render();
 })();
 </script>
 </body>
