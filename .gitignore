@@ -1,0 +1,4 @@
+ui_output/
+ui_uploads/
+.env
+__pycache__/

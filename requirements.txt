@@ -1,0 +1,4 @@
+requests>=2.31
+Jinja2>=3.1
+playwright==1.56.0
+Flask>=3.0

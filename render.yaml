@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: enso-cards
+    runtime: docker
+    plan: starter        # 512 МБ. Если рендер падает по памяти — поставьте standard (2 ГБ)
+    healthCheckPath: /
+    envVars:
+      - key: BOT_TOKEN
+        sync: false      # Render спросит значение при создании
+      - key: RENDER_SLOTS
+        value: "1"       # для standard можно 2

@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>try{var tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor&&tg.setHeaderColor("#000000");}catch(e){}</script>
+<title>円相 · готово</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:      #13120d;
+    --panel:    #1b1a14;
+    --paper:    #ece6d8;
+    --paper-70: rgba(236,230,216,.68);
+    --paper-40: rgba(236,230,216,.34);
+    --paper-14: rgba(236,230,216,.14);
+    --brick:    #a6402c;
+    --jade:     #4a6b5d;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh;
+    background:
+      radial-gradient(circle at 85% 0%, rgba(74,107,93,.14), transparent 45%),
+      var(--ink);
+    color:var(--paper);
+    font-family:'Inter', sans-serif;
+    padding:48px 20px;
+  }
+  .wrap{ max-width:960px; margin:0 auto; }
+
+  .brand{ display:flex; align-items:baseline; gap:14px; margin-bottom:8px; }
+  .brand .glyph{ font-size:30px; }
+  .brand .word{ font-family:'JetBrains Mono', monospace; font-size:15px; letter-spacing:.32em; color:var(--paper-70); text-transform:uppercase; }
+
+  .top-row{ display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:36px; }
+  h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:28px; margin:18px 0 4px; letter-spacing:-.01em; }
+  .meta{ font-family:'JetBrains Mono', monospace; font-size:14px; color:var(--paper-70); }
+
+  .zip-btn{
+    display:inline-block; padding:12px 22px; border-radius:9px; background:var(--jade);
+    color:var(--paper); text-decoration:none; font-weight:600; font-size:14px; white-space:nowrap;
+  }
+  .zip-btn:hover{ opacity:.9; }
+
+  .set{ margin-bottom:44px; }
+  .set-title{ font-family:'JetBrains Mono', monospace; font-size:14px; color:var(--paper-70); letter-spacing:.06em; text-transform:uppercase; margin-bottom:14px; }
+  .set-title .n{ color:var(--brick); }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:20px; }
+  .card{ background:var(--panel); border:1px solid var(--paper-14); border-radius:16px; overflow:hidden; display:flex; flex-direction:column; }
+  .thumb{ background:#000; display:flex; align-items:center; justify-content:center; padding:14px; }
+  .thumb img{ max-width:100%; max-height:300px; border-radius:6px; display:block; }
+  .card-body{ padding:16px 18px 18px; }
+  .card-title{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:15px; margin-bottom:4px; }
+  .card-dims{ font-family:'JetBrains Mono', monospace; font-size:12px; color:var(--paper-40); margin-bottom:14px; }
+  .download{
+    display:inline-block; width:100%; text-align:center; padding:10px; border-radius:9px;
+    background:var(--brick); color:var(--paper); text-decoration:none; font-weight:600; font-size:13px;
+  }
+  .download:hover{ opacity:.9; }
+
+  .back{ display:inline-block; margin-top:20px; color:var(--paper-70); text-decoration:none; font-family:'JetBrains Mono', monospace; font-size:14px; }
+  .back:hover{ color:var(--paper); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="glyph">円相</span><span class="word">Enso</span></div>
+
+  <div class="top-row">
+    <div>
+      <h1>Готово</h1>
+      <div class="meta">
+        {% if is_batch %}Подборка из {{ sets|length }} карточек{% else %}Одиночная карточка{% endif %}
+      </div>
+    </div>
+    <a class="zip-btn" href="/output/{{ zip_file }}" download>Скачать всё (.zip)</a>
+  </div>
+
+  {% for s in sets %}
+  <div class="set">
+    {% if is_batch %}
+    <div class="set-title"><span class="n">{{ '%02d'|format(s.index) }}/{{ '%02d'|format(s.total) }}</span> · {{ s.label }}</div>
+    {% endif %}
+    <div class="grid">
+      <div class="card">
+        <div class="thumb"><img src="/output/{{ s.files.story }}" alt="story"></div>
+        <div class="card-body">
+          <div class="card-title">Сторис</div>
+          <div class="card-dims">1080 × 1920</div>
+          <a class="download" href="/output/{{ s.files.story }}" download>Скачать PNG</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="thumb"><img src="/output/{{ s.files.post }}" alt="post"></div>
+        <div class="card-body">
+          <div class="card-title">Пост в ленту</div>
+          <div class="card-dims">1080 × 1350</div>
+          <a class="download" href="/output/{{ s.files.post }}" download>Скачать PNG</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="thumb"><img src="/output/{{ s.files.telegram }}" alt="telegram"></div>
+        <div class="card-body">
+          <div class="card-title">Telegram</div>
+          <div class="card-dims">1080 × 1080</div>
+          <a class="download" href="/output/{{ s.files.telegram }}" download>Скачать PNG</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <a class="back" href="/">← сгенерировать ещё</a>
+</div>
+{% include "_tg_send.html" %}
+</body>
+</html>

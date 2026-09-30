@@ -1,0 +1,28 @@
+<div id="tgSend" style="display:none;max-width:560px;margin:24px auto;padding:0 16px;text-align:center">
+  <button id="tgSendBtn" style="width:100%;padding:16px;border:0;border-radius:12px;background:#a6402c;color:#ece6d8;font:600 15px Inter,sans-serif;cursor:pointer">
+    📩 Отправить карточки в чат с ботом
+  </button>
+  <div id="tgSendMsg" style="margin-top:10px;font:14px Inter,sans-serif;color:#ece6d8"></div>
+</div>
+<script>
+(function(){
+  var tg = window.Telegram && window.Telegram.WebApp;
+  var user = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+  if(!user) return;                       // открыто не из Telegram — кнопка не нужна
+  var zip = "{{ zip_file }}";             // "<job_id>/enso-cards.zip"
+  document.getElementById("tgSend").style.display = "block";
+  var btn = document.getElementById("tgSendBtn"), msg = document.getElementById("tgSendMsg");
+  btn.onclick = function(){
+    btn.disabled = true; msg.textContent = "Отправляю…";
+    fetch("/send", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({job_id: zip.split("/")[0], chat_id: user.id})})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        msg.textContent = d.ok ? "Готово — карточки в чате с ботом ✅" : ("Ошибка: " + d.error);
+        btn.disabled = false;
+        if(d.ok && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+      })
+      .catch(function(e){ msg.textContent = "Ошибка сети: " + e; btn.disabled = false; });
+  };
+})();
+</script>

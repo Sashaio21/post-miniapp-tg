@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>円相 · GitHub card (1080×1350)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@300;500;700;900&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:      #13120d;
+    --paper:    #ece6d8;
+    --paper-70: rgba(236,230,216,.68);
+    --paper-40: rgba(236,230,216,.34);
+    --brick:    #a6402c;
+    --jade:     #4a6b5d;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ background:#000; display:flex; align-items:flex-start; justify-content:center; }
+  .card{
+    position:relative; width:1080px; height:1350px;
+    background:
+      radial-gradient(circle at 50% 14%, rgba(74,107,93,.16), transparent 45%),
+      radial-gradient(ellipse at 50% 100%, rgba(0,0,0,.55), transparent 60%),
+      var(--ink);
+    overflow:hidden; font-family:'Inter', sans-serif; color:var(--paper);
+  }
+  .grain{ position:absolute; inset:0; opacity:.05; mix-blend-mode:overlay; pointer-events:none; }
+  .brand{ position:absolute; top:56px; left:64px; display:flex; align-items:center; gap:14px; }
+  .brand .glyph{ font-size:28px; line-height:1; color:var(--paper); }
+  .brand .word{ font-family:'JetBrains Mono', monospace; font-size:17px; letter-spacing:.3em; color:var(--paper-70); text-transform:uppercase; }
+  .eyebrow{ position:absolute; top:60px; right:64px; font-family:'JetBrains Mono', monospace; font-size:17px; letter-spacing:.26em; color:var(--brick); text-transform:uppercase; }
+  .photo-frame{ position:absolute; top:150px; left:50%; transform:translateX(-50%); width:460px; height:460px; }
+  .photo-clip{
+    position:absolute; top:65px; left:65px; width:330px; height:330px;
+    border-radius:50%; overflow:hidden;
+  }
+  .project-photo{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+    object-position: 50% 30%; transform: scale(1.15); transform-origin: center;
+    filter: grayscale(1) contrast(1.15) brightness(0.95);
+  }
+  .photo-tint{
+    position:absolute; inset:0; width:100%; height:100%;
+    background: linear-gradient(155deg, var(--brick) 0%, var(--jade) 100%);
+    mix-blend-mode: color; opacity:.85;
+  }
+  .ring-image{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; pointer-events:none; }
+
+  .content{ position:absolute; top:650px; left:64px; right:64px; }
+  .stats{ display:flex; align-items:center; justify-content:flex-start; gap:22px; font-family:'JetBrains Mono', monospace; font-size:20px; color:var(--paper-70); margin-bottom:32px; text-align:left; }
+  .stats .stars{ color:var(--brick); display:flex; align-items:center; gap:8px; }
+  .stats .sep{ color:var(--paper-40); }
+  .stats .repo{ color:var(--paper-70); }
+  .project-name{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:50px; line-height:1.1; letter-spacing:-.01em; color:var(--paper); text-align:left; }
+  .tagline{ margin-top:16px; font-size:23px; font-weight:400; color:var(--paper-70); line-height:1.45; text-align:left; }
+  .divider{ margin:36px 0 30px; height:1px; background:linear-gradient(90deg, transparent, var(--paper-40) 50%, transparent); }
+  .desc{ font-size:24px; line-height:1.55; color:var(--paper); text-align:justify; text-justify:inter-word; }
+  .desc p + p{ margin-top:12px; }
+
+  .terminal{ margin-top:32px; background:rgba(236,230,216,.045); border:1px solid rgba(236,230,216,.14); border-radius:14px; padding:20px 24px; max-width:900px; }
+  .terminal-bar{ display:flex; gap:8px; margin-bottom:14px; }
+  .terminal-bar .dot{ width:10px; height:10px; border-radius:50%; }
+  .terminal-bar .dot.brick{ background:var(--brick); }
+  .terminal-bar .dot.jade{ background:var(--jade); }
+  .terminal-bar .dot.paper{ background:var(--paper-40); }
+  .terminal-line{ font-family:'JetBrains Mono', monospace; font-size:17px; color:var(--paper-70); line-height:1.6; white-space:nowrap; overflow-x:auto; }
+  .terminal-line .url{ color:var(--paper); }
+  .terminal-line::before{ content:"$ "; color:var(--brick); }
+
+  .footer{ position:absolute; bottom:56px; left:64px; right:64px; display:flex; align-items:center; justify-content:space-between; font-family:'JetBrains Mono', monospace; font-size:16px; letter-spacing:.09em; color:var(--paper-40); text-transform:uppercase; }
+  .footer .rule{ flex:1; height:1px; background:var(--paper-40); margin:0 20px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <svg class="grain" viewBox="0 0 1080 1350">
+    <filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter>
+    <rect width="100%" height="100%" filter="url(#n)"/>
+  </svg>
+
+  <div class="brand"><span class="glyph">円相</span><span class="word">Enso</span></div>
+  <div class="eyebrow">⚙ GitHub</div>
+
+  <div class="photo-frame">
+    <div class="photo-clip">
+      <img class="project-photo" src="{{ photo_data_uri }}" alt="project preview">
+      <div class="photo-tint"></div>
+    </div>
+    <img class="ring-image" src="{{ ring_data_uri }}" alt="enso ring">
+  </div>
+
+  <div class="content">
+    <div class="stats">
+      <span class="stars">★ {{ stars }}</span>
+      <span class="sep">·</span>
+      <span class="repo">github.com/{{ repo_path }}</span>
+    </div>
+
+    <div class="project-name">{{ project_name }}</div>
+    <div class="tagline">{{ tagline }}</div>
+
+    <div class="divider"></div>
+
+    <div class="desc">
+      <p>{{ desc_paragraph }}</p>
+    </div>
+
+    <div class="terminal">
+      <div class="terminal-bar"><span class="dot brick"></span><span class="dot jade"></span><span class="dot paper"></span></div>
+      <div class="terminal-line"><span class="url">git clone {{ clone_url }}</span></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    {% if is_batch %}
+    <span>円相 · подборка</span>
+    <span class="rule"></span>
+    <span>{{ index }} / {{ total }}</span>
+    {% else %}
+    <span class="rule" style="margin:0;"></span>
+    {% endif %}
+  </div>
+</div>
+</body>
+</html>

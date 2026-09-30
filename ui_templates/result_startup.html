@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>try{var tg=window.Telegram.WebApp;tg.ready();tg.expand();tg.setHeaderColor&&tg.setHeaderColor("#000000");}catch(e){}</script>
+<title>円相 · готово</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:      #13120d;
+    --panel:    #1b1a14;
+    --paper:    #ece6d8;
+    --paper-70: rgba(236,230,216,.68);
+    --paper-40: rgba(236,230,216,.34);
+    --paper-14: rgba(236,230,216,.14);
+    --brick:    #a6402c;
+    --jade:     #4a6b5d;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh;
+    background:
+      radial-gradient(circle at 85% 0%, rgba(74,107,93,.14), transparent 45%),
+      var(--ink);
+    color:var(--paper);
+    font-family:'Inter', sans-serif;
+    padding:48px 20px;
+  }
+  .wrap{ max-width:1100px; margin:0 auto; }
+
+  .brand{ display:flex; align-items:baseline; gap:14px; margin-bottom:8px; }
+  .brand .glyph{ font-size:30px; }
+  .brand .word{ font-family:'JetBrains Mono', monospace; font-size:15px; letter-spacing:.32em; color:var(--paper-70); text-transform:uppercase; }
+
+  .top-row{ display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap; margin-bottom:36px; }
+  h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:28px; margin:18px 0 4px; letter-spacing:-.01em; }
+  .meta{ font-family:'JetBrains Mono', monospace; font-size:14px; color:var(--paper-70); }
+
+  .zip-btn{
+    display:inline-block; padding:12px 22px; border-radius:9px; background:var(--jade);
+    color:var(--paper); text-decoration:none; font-weight:600; font-size:14px; white-space:nowrap;
+  }
+  .zip-btn:hover{ opacity:.9; }
+
+  .section-title{ font-family:'JetBrains Mono', monospace; font-size:14px; color:var(--paper-70); letter-spacing:.06em; text-transform:uppercase; margin:0 0 14px; }
+  .section-title .n{ color:var(--brick); }
+
+  .tg-block{ margin-bottom:48px; }
+  .tg-card{ max-width:340px; background:var(--panel); border:1px solid var(--paper-14); border-radius:16px; overflow:hidden; }
+  .tg-card .thumb{ background:#000; padding:14px; }
+  .tg-card .thumb img{ width:100%; border-radius:6px; display:block; }
+  .tg-card .card-body{ padding:14px 18px 18px; }
+  .download{
+    display:inline-block; width:100%; text-align:center; padding:10px; border-radius:9px;
+    background:var(--brick); color:var(--paper); text-decoration:none; font-weight:600; font-size:13px;
+  }
+  .download:hover{ opacity:.9; }
+
+  .grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:18px; }
+  .card{ background:var(--panel); border:1px solid var(--paper-14); border-radius:16px; overflow:hidden; display:flex; flex-direction:column; }
+  .thumb{ background:#000; display:flex; align-items:center; justify-content:center; padding:12px; }
+  .thumb img{ max-width:100%; max-height:280px; border-radius:6px; display:block; }
+  .card-body{ padding:12px 16px 16px; }
+  .card-title{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:14px; margin-bottom:10px; }
+
+  .back{ display:inline-block; margin-top:36px; color:var(--paper-70); text-decoration:none; font-family:'JetBrains Mono', monospace; font-size:14px; }
+  .back:hover{ color:var(--paper); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="glyph">円相</span><span class="word">Enso</span></div>
+
+  <div class="top-row">
+    <div>
+      <h1>Готово</h1>
+      <div class="meta">Пакет «{{ project_name }}» — обложка + 7 слайдов карусели</div>
+    </div>
+    <a class="zip-btn" href="/output/{{ zip_file }}" download>Скачать всё (.zip)</a>
+  </div>
+
+  <div class="tg-block">
+    <div class="section-title">Telegram-обложка (1080×1080)</div>
+    <div class="tg-card">
+      <div class="thumb"><img src="/output/{{ telegram_file }}" alt="telegram"></div>
+      <div class="card-body">
+        <a class="download" href="/output/{{ telegram_file }}" download>Скачать PNG</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">Карусель для TikTok / Reels / Stories (1080×1350, 7 слайдов)</div>
+  <div class="grid">
+    {% for f in slide_files %}
+    <div class="card">
+      <div class="thumb"><img src="/output/{{ f }}" alt="slide {{ loop.index }}"></div>
+      <div class="card-body">
+        <div class="card-title">Слайд {{ loop.index }} / {{ slide_files|length }}</div>
+        <a class="download" href="/output/{{ f }}" download>Скачать PNG</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <a class="back" href="/">← сгенерировать ещё</a>
+</div>
+{% include "_tg_send.html" %}
+</body>
+</html>
