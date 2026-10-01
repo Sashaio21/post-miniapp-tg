@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+  /* Шрифт Fira Sans Extra Condensed ExtraBold Italic зашит в пак (assets/) — Google Fonts не нужен */
+  @font-face{ font-family:'FP'; font-style:italic; font-weight:800;
+    src:url({{ asset('fira-extra-condensed-cyrillic-800-italic.woff2') }}) format('woff2');
+    unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116; }
+  @font-face{ font-family:'FP'; font-style:italic; font-weight:800;
+    src:url({{ asset('fira-extra-condensed-latin-800-italic.woff2') }}) format('woff2');
+    unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212; }
+
+  :root{ --accent:{{ accent|default('#e10600') }}; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ background:#000; }
+  .card{ position:relative; width:1080px; height:1170px; overflow:hidden; background:#0b0b0b; color:#fff;
+    font-family:'FP','Fira Sans Extra Condensed','Arial Narrow',sans-serif; font-style:italic; font-weight:800; }
+
+  .bg{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:{{ photo_position|default('center') }}; }
+  .shade{ position:absolute; inset:0;
+    background:linear-gradient(to bottom, rgba(0,0,0,.22) 0%, rgba(0,0,0,0) 14%, rgba(0,0,0,0) 50%, rgba(0,0,0,.80) 73%, #000 90%); }
+
+  /* красный плашка-логотип сверху слева */
+  .badge{ position:absolute; top:44px; left:-14px; transform:skewX(-12deg); padding:2px 64px 0 52px;
+    border:3px solid #f2f2f2; border-left:none;
+    background:linear-gradient(180deg,#ff4a3c 0%, var(--accent) 48%, #7e0000 100%);
+    box-shadow:0 8px 20px rgba(0,0,0,.55), inset 0 2px 0 rgba(255,255,255,.35); }
+  .badge span{ display:block; transform:skewX(12deg); font-size:92px; line-height:1.05; letter-spacing:.015em;
+    text-transform:uppercase; text-shadow:0 4px 0 rgba(0,0,0,.35); }
+
+  .title{ position:absolute; left:34px; right:34px; bottom:178px; text-align:center;
+    font-size:{{ title_size|default(56) }}px; line-height:1.12; text-shadow:0 3px 16px rgba(0,0,0,.95), 0 0 3px #000; }
+  .title .accent{ color:var(--accent); }
+
+  .footer{ position:absolute; left:0; right:20px; bottom:40px; display:flex; align-items:center; }
+  .handle{ padding-left:30px; font-size:42px; letter-spacing:.01em; text-transform:uppercase; white-space:nowrap; }
+  .blip{ width:200px; height:70px; margin-left:14px; flex:0 0 auto; overflow:visible; filter:drop-shadow(0 0 6px var(--accent)); }
+  .line{ flex:1; height:3px; margin-left:-1px; background:var(--accent); box-shadow:0 0 8px var(--accent); }
+</style>
+</head>
+<body>
+<div class="card">
+  {% if photo_data_uri %}<img class="bg" src="{{ photo_data_uri }}" alt="">{% endif %}
+  <div class="shade"></div>
+
+  <div class="badge"><span>{{ brand|default('F1 PULSE') }}</span></div>
+
+  <div class="title">{{ title }}</div>
+
+  <div class="footer">
+    <div class="handle">{{ handle|default('TG: PULSE_F1') }}</div>
+    <svg class="blip" viewBox="0 0 200 70"><path d="M0 35 H72 L86 28 L100 4 L116 66 L130 22 L140 35 H200" fill="none" stroke="#e10600" stroke-width="3" stroke-linejoin="round"/></svg>
+    <div class="line"></div>
+  </div>
+</div>
+</body>
+</html>

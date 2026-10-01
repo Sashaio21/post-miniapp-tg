@@ -1,0 +1,16 @@
+{
+  "name": "F1 Pulse · Новость на фото",
+  "description": "Фото на весь фон, красная плашка-логотип, заголовок и подпись канала с пульс-линией.",
+  "width": 1080,
+  "height": 1170,
+  "file": "template.html.j2",
+  "order": 30,
+  "photo": "required",
+  "hint": "Поля: title (заголовок; можно <br> и <span class=\"accent\">…</span>). Необязательно: brand (логотип), handle (подпись канала), accent (цвет), title_size (размер заголовка, px), photo_position (например \"center 30%\"). Фон — загруженное фото.",
+  "example": {
+    "title": "F1 и Pirelli планируют увеличить износ шин<br>в 2027 году",
+    "brand": "F1 PULSE",
+    "handle": "TG: PULSE_F1",
+    "accent": "#e10600"
+  }
+}

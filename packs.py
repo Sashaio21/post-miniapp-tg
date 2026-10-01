@@ -68,9 +68,13 @@ def _items(data):
 
 def _b_default(pack, data, photo):
     items = _items(data)
-    return [_r(pack["file"], it, pack["width"], pack["height"],
-               pack["name"] if len(items) == 1 else f"{pack['name']} · {n}")
-            for n, it in enumerate(items, start=1)]
+    out = []
+    for n, it in enumerate(items, start=1):
+        # у шаблонов с полем photo загруженная картинка доступна как {{ photo_data_uri }}
+        ctx = {**it, "photo_data_uri": photo} if (pack["photo"] and photo) else it
+        out.append(_r(pack["file"], ctx, pack["width"], pack["height"],
+                      pack["name"] if len(items) == 1 else f"{pack['name']} · {n}"))
+    return out
 
 
 def _b_github(pack, data, photo):

@@ -167,7 +167,9 @@ def serve_asset(filename):
 
 @app.get("/packs/<pack_id>/assets/<path:filename>")
 def serve_pack_asset(pack_id, filename):
-    return send_from_directory(_pack_or_404(pack_id)["dir"] / "assets", filename)
+    resp = send_from_directory(_pack_or_404(pack_id)["dir"] / "assets", filename)
+    resp.headers["Access-Control-Allow-Origin"] = "*"  # шрифты внутри sandbox-iframe превью
+    return resp
 
 
 # ------------------------------------------------------------------ отправка в Telegram
