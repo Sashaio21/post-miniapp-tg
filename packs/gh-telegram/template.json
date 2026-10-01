@@ -1,0 +1,19 @@
+{
+  "name": "GitHub · Telegram-пост",
+  "description": "Квадратная карточка для поста в Telegram.",
+  "width": 1080,
+  "height": 1080,
+  "file": "telegram_1080x1080.html.j2",
+  "builder": "github",
+  "hint": "Поля: project_name, repo_path, clone_url, tagline, description, stars. Фото проекта загружается отдельным полем.",
+  "order": 12,
+  "example": {
+    "project_name": "ai-job-search",
+    "repo_path": "MadsLorentzen/ai-job-search",
+    "clone_url": "https://github.com/MadsLorentzen/ai-job-search.git",
+    "tagline": "Локальный ИИ-помощник для поиска работы — без данных на чужих серверах",
+    "description": "Анализирует вакансии и подстраивает резюме под каждую из них — прямо на вашей машине, бесплатно и в открытом коде.",
+    "stars": 22500
+  },
+  "photo": "required"
+}

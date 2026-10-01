@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<title>{{ pack.name }}</title>
+{% include "_head.html" %}
+<style>
+
+  .back{ display:inline-block; margin-bottom:14px; font-size:13px; color:var(--paper-70); text-decoration:none; }
+  .back:hover{ color:var(--paper); }
+  #previewBox{ margin:4px 0 20px; }
+  .pv-head{ display:flex; justify-content:space-between; font:500 12px 'JetBrains Mono',monospace; letter-spacing:.08em; text-transform:uppercase; color:var(--paper-70); margin-bottom:10px; }
+  .pv-error{ font-size:13px; color:#e08a76; margin-bottom:8px; }
+  .pv-strip{ display:flex; gap:12px; overflow-x:auto; scroll-snap-type:x mandatory; padding-bottom:8px; }
+  .pv-card{ flex:0 0 auto; margin:0; scroll-snap-align:start; }
+  .pv-frame{ position:relative; overflow:hidden; border-radius:10px; border:1px solid var(--paper-14); background:#000; }
+  .pv-frame iframe{ position:absolute; left:0; top:0; border:0; transform-origin:0 0; pointer-events:none; }
+  .pv-card figcaption{ font-size:12px; color:var(--paper-70); margin-top:6px; }
+  .pv-note{ font-size:12px; color:var(--paper-70); margin-top:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">← Все шаблоны</a>
+  <h1>{{ pack.name }}</h1>
+  <p class="subtitle">{{ pack.description }} <span style="white-space:nowrap">· {{ pack.width }} × {{ pack.height }}</span></p>
+
+  <form id="genForm" method="post" action="/t/{{ pack.id }}/generate" enctype="multipart/form-data">
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <div class="field">
+      <label for="json_data">JSON с данными</label>
+      <textarea class="tall" id="json_data" name="json_data" spellcheck="false">{{ json_text }}</textarea>
+      {% if pack.hint %}<div class="json-hint">{{ pack.hint }}</div>{% endif %}
+    </div>
+
+    {% if pack.photo %}
+    <div class="field">
+      <label>Фото{% if pack.photo == 'required' %} (обязательно){% endif %}</label>
+      <label class="file-drop">
+        <input type="file" id="photo" name="photo" accept="image/png,image/jpeg,image/webp">
+        <span class="hint">Нажмите, чтобы выбрать скриншот или картинку</span>
+        <span class="filename" id="photoName"></span>
+      </label>
+    </div>
+    {% endif %}
+
+    <div id="previewBox" style="display:none;">
+      <div class="pv-head"><span>Предпросмотр</span><span id="pvStatus"></span></div>
+      <div id="pvError" class="pv-error"></div>
+      <div id="pvStrip" class="pv-strip"></div>
+      <div class="pv-note">Живой HTML-предпросмотр. PNG создаются только после нажатия кнопки.</div>
+    </div>
+
+    <button type="submit" id="submitBtn">Сгенерировать PNG →</button>
+  </form>
+</div>
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const ta = $('json_data'), box = $('previewBox'), strip = $('pvStrip'), err = $('pvError'),
+        status = $('pvStatus'), photoInput = $('photo'), CARD_W = 240;
+  let photoUri = null, timer = null, ctrl = null;
+
+  function schedule(){ clearTimeout(timer); timer = setTimeout(run, 500); }
+
+  async function run(){
+    const raw = ta.value.trim();
+    if(!raw){ box.style.display = 'none'; return; }
+    if(ctrl) ctrl.abort();
+    ctrl = new AbortController();
+    box.style.display = 'block'; status.textContent = 'обновляю…';
+    try{
+      const r = await fetch('/t/{{ pack.id }}/preview', {method:'POST', signal:ctrl.signal,
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({json_data: raw, photo: photoUri})});
+      const d = await r.json(); status.textContent = '';
+      if(!d.ok){ err.textContent = d.error; return; }      // прошлое превью остаётся, показываем причину
+      err.textContent = ''; draw(d.cards);
+    }catch(e){ if(e.name !== 'AbortError') status.textContent = 'нет связи'; }
+  }
+
+  function draw(cards){
+    strip.innerHTML = '';
+    cards.forEach(c => {
+      const k = CARD_W / c.w, fig = document.createElement('figure'); fig.className = 'pv-card';
+      const fr = document.createElement('div'); fr.className = 'pv-frame';
+      fr.style.width = CARD_W + 'px'; fr.style.height = Math.round(c.h * k) + 'px';
+      const f = document.createElement('iframe'); f.setAttribute('sandbox', '');   // без скриптов
+      f.style.width = c.w + 'px'; f.style.height = c.h + 'px'; f.style.transform = 'scale(' + k + ')'; f.srcdoc = c.html;
+      fr.appendChild(f);
+      const cap = document.createElement('figcaption'); cap.textContent = c.label;
+      fig.append(fr, cap); strip.appendChild(fig);
+    });
+  }
+
+  if(photoInput) photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0]; $('photoName').textContent = file ? file.name : '';
+    if(!file){ photoUri = null; schedule(); return; }
+    const img = new Image(), url = URL.createObjectURL(file);          // для превью уменьшаем до 600px
+    img.onload = () => { const s = Math.min(1, 600 / img.width), cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      photoUri = cv.toDataURL('image/jpeg', 0.8); URL.revokeObjectURL(url); schedule(); };
+    img.src = url;
+  });
+
+  ta.addEventListener('input', schedule);
+  $('genForm').addEventListener('submit', () => { const b = $('submitBtn'); setTimeout(() => { b.disabled = true; b.textContent = 'Генерирую… ~20 сек'; }, 0); });
+  run();
+})();
+</script>
+</body>
+</html>

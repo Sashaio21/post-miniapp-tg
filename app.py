@@ -1,286 +1,176 @@
 #!/usr/bin/env python3
+"""Универсальный генератор карточек: галерея шаблонов → страница шаблона (JSON + превью) → PNG.
+
+Шаблоны — папки в packs/ (см. packs/README.md). Запуск: python app.py
 """
-円相 (Enso) — веб-интерфейс к generate.py.
-
-Только JSON — без обращения к GitHub API. Два типа карточек:
-
-  github   — подборки GitHub-проектов, нужно фото/скриншот. Два режима:
-             одиночная карточка (JSON-объект + фото) или подборка
-             (JSON-список + фото по числу элементов).
-  startup  — разбор ОДНОГО провалившегося стартапа. Только один режим:
-             один JSON-объект → сразу весь пакет (telegram-обложка +
-             7 слайдов карусели). Фото не нужно, режима «подборка» нет.
-
-Запуск:
-    python app.py
-
-Открыть в браузере: http://127.0.0.1:5000
-"""
-
 import json
 import os
 import re
+import shutil
 import threading
+import time
 import uuid
 import zipfile
 from pathlib import Path
 
 import requests
-from urllib.parse import quote
+from flask import Flask, abort, jsonify, render_template, request, send_from_directory
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+import packs as P
+from generate import ASSETS_DIR, ManualDataError, to_data_uri
 
-from jinja2 import Environment, FileSystemLoader
-
-from generate import (
-    ASSETS_DIR,
-    TEMPLATE_CATALOG,
-    catalog_ids,
-    default_ids,
-    github_formats,
-    github_templates,
-    render_startup_items,
-    startup_items,
-    STARTUP_TELEGRAM_H,
-    STARTUP_TELEGRAM_W,
-    TEMPLATES_DIR,
-    to_data_uri,
-    MANUAL_JSON_EXAMPLE,
-    MANUAL_JSON_EXAMPLE_STARTUP,
-    RING_ASSET,
-    ManualDataError,
-    build_context_manual,
-    build_startup_package,
-    parse_batch_items,
-    render_all,
-    render_startup_package,
-)
-
-BASE_DIR = Path(__file__).resolve().parent
-UPLOAD_DIR = BASE_DIR / "ui_uploads"
+BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "ui_output"
+UPLOAD_DIR = BASE_DIR / "ui_uploads"
+ALLOWED_IMG = {".png", ".jpg", ".jpeg", ".webp"}
+MAX_UPLOAD_MB = 10
+KEEP_SECONDS = 24 * 3600
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-# Не более 2 одновременных рендеров Chromium — иначе сервер упадёт по памяти
+# Не более N одновременных рендеров Chromium — иначе сервер упадёт по памяти
 RENDER_SLOTS = threading.Semaphore(int(os.environ.get("RENDER_SLOTS", "2")))
-UPLOAD_DIR.mkdir(exist_ok=True)
+
 OUTPUT_DIR.mkdir(exist_ok=True)
-
-ALLOWED_PHOTO_EXT = {".png", ".jpg", ".jpeg", ".webp"}
-
-BATCH_JSON_EXAMPLE = [
-    MANUAL_JSON_EXAMPLE,
-    {
-        "project_name": "cal.com",
-        "repo_path": "calcom/cal.com",
-        "clone_url": "https://github.com/calcom/cal.com.git",
-        "tagline": "Open-source альтернатива Calendly",
-        "description": "Система планирования встреч с открытым кодом — можно развернуть на своём сервере.",
-        "stars": 34000,
-    },
-]
+UPLOAD_DIR.mkdir(exist_ok=True)
 
 app = Flask(__name__, template_folder="ui_templates")
-app.config["MAX_CONTENT_LENGTH"] = 60 * 1024 * 1024  # 60 МБ — с запасом на подборку из нескольких фото
-
-_JSON_EXAMPLES = {
-    "github": json.dumps(MANUAL_JSON_EXAMPLE, ensure_ascii=False, indent=2),
-    "startup": json.dumps(MANUAL_JSON_EXAMPLE_STARTUP, ensure_ascii=False, indent=2),
-}
-_BATCH_EXAMPLE_STR = json.dumps(BATCH_JSON_EXAMPLE, ensure_ascii=False, indent=2)
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
 
-def _render_index(**kwargs):
-    """render_template('index.html', ...) но с гарантированными примерами JSON —
-    они нужны шаблону всегда (в том числе в JS), не только при первом GET."""
-    kwargs.setdefault("json_examples", _JSON_EXAMPLES)
-    kwargs.setdefault("batch_example", _BATCH_EXAMPLE_STR)
-    kwargs.setdefault("templates_catalog", TEMPLATE_CATALOG)
-    kwargs.setdefault("selected_templates", [])
-    return render_template("index.html", **kwargs)
+def _pack_or_404(pack_id: str) -> dict:
+    pack = P.load_packs().get(pack_id)
+    if not pack:
+        abort(404)
+    return pack
 
 
-def _sel(ids, group):
-    """Оставляет только id шаблонов нужной группы. None (ничего не пришло) → по умолчанию."""
-    if not ids:
-        return None
-    valid = set(catalog_ids(group))
-    return [i for i in ids if i in valid]
+def _example_text(pack: dict) -> str:
+    return json.dumps(pack["example"], ensure_ascii=False, indent=2)
 
 
-def _ext_ok(filename: str) -> bool:
-    return Path(filename).suffix.lower() in ALLOWED_PHOTO_EXT
+def _cleanup():
+    """Удаляет результаты и загрузки старше суток (диск на хостинге не резиновый)."""
+    now = time.time()
+    for base in (OUTPUT_DIR, UPLOAD_DIR):
+        for item in base.iterdir():
+            try:
+                if now - item.stat().st_mtime > KEEP_SECONDS:
+                    shutil.rmtree(item) if item.is_dir() else item.unlink()
+            except OSError:
+                pass
 
 
-def _make_zip(files: list, zip_path: Path) -> None:
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for f in files:
-            zf.write(f, arcname=f.name)
-
-
+# ------------------------------------------------------------------ страницы
 @app.get("/")
-def index():
-    return _render_index()
+def gallery():
+    items = []
+    for pack in P.load_packs().values():
+        thumb, tw, th = None, pack["width"], pack["height"]
+        try:  # миниатюра = первая карточка из примера шаблона
+            r = P.build_renders(pack, pack["example"], P.PLACEHOLDER if pack["photo"] else None)[0]
+            thumb, tw, th = P.render_html(pack, r, preview=True), r["w"], r["h"]
+        except Exception:  # noqa: BLE001 — битый пример не должен ронять галерею
+            pass
+        items.append({**pack, "thumb": thumb, "tw": tw, "th": th})
+    return render_template("gallery.html", packs=items)
 
 
-@app.post("/generate")
-def generate_view():
-    card_type = request.form.get("card_type", "github")
-    if card_type not in ("github", "startup"):
-        card_type = "github"
-    mode = request.form.get("mode", "single") if card_type == "github" else "startup"
+@app.get("/t/<pack_id>")
+def template_page(pack_id):
+    pack = _pack_or_404(pack_id)
+    return render_template("template.html", pack=pack, json_text=_example_text(pack), error=None)
 
-    json_raw = request.form.get("json_data", "").strip()
-    sel = _sel(request.form.getlist("templates"), card_type)
-    form_state = {"json_data": json_raw, "mode": mode, "card_type": card_type, "selected_templates": sel or []}
 
-    if not json_raw:
-        return _render_index(error="Вставьте JSON с данными карточки.", **form_state), 400
-    if not RING_ASSET.exists():
-        return _render_index(error="Не найден ассет кольца в assets/ — переустановите проект.", **form_state), 500
-
-    if not sel:
-        return _render_index(error="Отметьте хотя бы один шаблон в списке.", **form_state), 400
-
-    job_id = uuid.uuid4().hex[:8]
-    job_out_dir = OUTPUT_DIR / job_id
-
-    # ================= STARTUP: один пакет (обложка + 7 слайдов) =================
-    if card_type == "startup":
-        try:
-            data = json.loads(json_raw)
-        except json.JSONDecodeError as e:
-            return _render_index(error=f"Невалидный JSON: {e}", **form_state), 400
-        if isinstance(data, list):
-            return _render_index(
-                error="Для «Провал стартапа» нужен ОДИН JSON-объект (не список) — один стартап, весь пакет из 8 картинок за раз.",
-                **form_state,
-            ), 400
-
-        try:
-            pkg = build_startup_package(data)
-        except ManualDataError as e:
-            return _render_index(error=str(e), **form_state), 400
-
-        try:
-            items = startup_items(pkg, sel)
-            with RENDER_SLOTS:
-                paths = render_startup_items(items, job_out_dir, pkg["slug"])
-        except Exception as e:
-            return _render_index(error=f"Ошибка рендера: {e}", **form_state), 500
-
-        zip_path = job_out_dir / "enso-cards.zip"
-        _make_zip(paths, zip_path)
-
-        cards = [{"file": f"{job_id}/{p.name}", "label": it["label"], "dims": f"{it['w']} × {it['h']}"}
-                 for p, it in zip(paths, items)]
-
-        return render_template(
-            "result_startup.html",
-            project_name=pkg["slug"],
-            cards=cards,
-            zip_file=f"{job_id}/enso-cards.zip",
-        )
-
-    # ================= GITHUB: ПОДБОРКА =================
-    if mode == "batch":
-        photos = [f for f in request.files.getlist("photos") if f.filename]
-        if not photos:
-            return _render_index(error="Загрузите фото — по одному на каждый элемент подборки.", **form_state), 400
-        for f in photos:
-            if not _ext_ok(f.filename):
-                return _render_index(error=f"Файл «{f.filename}» — не PNG/JPG/WEBP.", **form_state), 400
-
-        try:
-            items = parse_batch_items(json_raw)
-        except ManualDataError as e:
-            return _render_index(error=str(e), **form_state), 400
-
-        if len(photos) != len(items):
-            return _render_index(
-                error=f"Фото ({len(photos)}) и элементов в JSON ({len(items)}) должно быть поровну — они сопоставляются по порядку.",
-                **form_state,
-            ), 400
-
-        total = len(items)
-        sets = []
-        all_files = []
-        for i, (item, photo) in enumerate(zip(items, photos), start=1):
-            ext = Path(photo.filename).suffix.lower()
-            photo_path = UPLOAD_DIR / f"{job_id}-{i}{ext}"
-            photo.save(photo_path)
-            try:
-                context = build_context_manual(item, photo_path, index=i, total=total, is_batch=True)
-            except ManualDataError as e:
-                return _render_index(error=f"Элемент №{i}: {e}", **form_state), 400
-
-            slug = f"{i:02d}-{context['project_name'].lower().replace(' ', '-')}"
-            try:
-                with RENDER_SLOTS:
-                    render_all(context, job_out_dir, slug, formats=github_formats(sel))
-            except Exception as e:
-                return _render_index(error=f"Ошибка рендера (элемент №{i}): {e}", **form_state), 500
-
-            cards = [{"file": f"{job_id}/{slug}-{t['suffix']}.png", "label": t["name"], "dims": t["dims"]}
-                     for t in github_templates(sel)]
-            all_files += [job_out_dir / Path(c["file"]).name for c in cards]
-            sets.append({"label": context["project_name"], "index": i, "total": total, "cards": cards})
-
-        zip_path = job_out_dir / "enso-cards.zip"
-        _make_zip(all_files, zip_path)
-
-        return render_template(
-            "result.html",
-            is_batch=True,
-            sets=sets,
-            zip_file=f"{job_id}/enso-cards.zip",
-        )
-
-    # ================= GITHUB: ОДИНОЧНАЯ КАРТОЧКА =================
-    photo = request.files.get("photo")
-    if not photo or photo.filename == "":
-        return _render_index(error="Загрузите фото/скриншот проекта.", **form_state), 400
-    if not _ext_ok(photo.filename):
-        return _render_index(error="Формат не поддерживается — нужен PNG, JPG или WEBP.", **form_state), 400
-
+@app.post("/t/<pack_id>/preview")
+def preview(pack_id):
+    pack = _pack_or_404(pack_id)
+    b = request.get_json(silent=True) or {}
+    raw = (b.get("json_data") or "").strip()
+    if not raw:
+        return jsonify(ok=True, cards=[])
+    photo = b.get("photo") if str(b.get("photo", "")).startswith("data:image/") else P.PLACEHOLDER
     try:
-        data = json.loads(json_raw)
+        data = json.loads(raw)
     except json.JSONDecodeError as e:
-        return _render_index(error=f"Невалидный JSON: {e}", **form_state), 400
-    if isinstance(data, list):
-        return _render_index(
-            error="Это похоже на список — для нескольких карточек переключитесь на вкладку «Подборка».",
-            **form_state,
-        ), 400
+        return jsonify(ok=False, error=f"Невалидный JSON: {e}")
+    try:
+        renders = P.build_renders(pack, data, photo)[:P.PREVIEW_MAX]
+        cards = [{"label": r["label"], "w": r["w"], "h": r["h"], "html": P.render_html(pack, r, preview=True)}
+                 for r in renders]
+    except ManualDataError as e:
+        return jsonify(ok=False, error=str(e))
+    except Exception as e:  # noqa: BLE001 — неполный JSON не должен ронять превью
+        return jsonify(ok=False, error=f"Не удалось построить превью: {e}")
+    return jsonify(ok=True, cards=cards)
 
-    ext = Path(photo.filename).suffix.lower()
-    photo_path = UPLOAD_DIR / f"{job_id}{ext}"
-    photo.save(photo_path)
+
+@app.post("/t/<pack_id>/generate")
+def generate(pack_id):
+    pack = _pack_or_404(pack_id)
+    raw = (request.form.get("json_data") or "").strip()
+
+    def fail(msg):
+        return render_template("template.html", pack=pack, json_text=raw, error=msg), 400
 
     try:
-        context = build_context_manual(data, photo_path, index=1, total=1, is_batch=False)
-    except ManualDataError as e:
-        return _render_index(error=str(e), **form_state), 400
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        return fail(f"Невалидный JSON: {e}")
 
-    slug = f"{context['project_name'].lower().replace(' ', '-')}-{job_id}"
+    _cleanup()
+    job_id = uuid.uuid4().hex[:8]
+    photo_uri = None
+    upload = request.files.get("photo")
+    if pack["photo"] and upload and upload.filename:
+        ext = Path(upload.filename).suffix.lower()
+        if ext not in ALLOWED_IMG:
+            return fail("Фото: поддерживаются PNG, JPG, WEBP.")
+        photo_path = UPLOAD_DIR / f"{job_id}{ext}"
+        upload.save(photo_path)
+        photo_uri = to_data_uri(photo_path)
+    elif pack["photo"] == "required":
+        return fail("Загрузите фото — оно обязательно для этого шаблона.")
+
+    try:
+        renders = P.build_renders(pack, data, photo_uri)
+    except ManualDataError as e:
+        return fail(str(e))
+    except Exception as e:  # noqa: BLE001
+        return fail(f"Ошибка в данных: {e}")
+
+    out_dir = OUTPUT_DIR / job_id
     try:
         with RENDER_SLOTS:
-            render_all(context, job_out_dir, slug, formats=github_formats(sel))
-    except Exception as e:
-        return _render_index(error=f"Ошибка рендера: {e}", **form_state), 500
+            paths = P.render_pngs(pack, renders, out_dir)
+    except Exception as e:  # noqa: BLE001
+        return fail(f"Не удалось сгенерировать картинки: {e}")
 
-    cards = [{"file": f"{job_id}/{slug}-{t['suffix']}.png", "label": t["name"], "dims": t["dims"]}
-             for t in github_templates(sel)]
-    zip_path = job_out_dir / "enso-cards.zip"
-    _make_zip([job_out_dir / Path(c["file"]).name for c in cards], zip_path)
-
-    return render_template(
-        "result.html",
-        is_batch=False,
-        sets=[{"label": context["project_name"], "index": 1, "total": 1, "cards": cards}],
-        zip_file=f"{job_id}/enso-cards.zip",
-    )
+    zip_path = out_dir / "enso-cards.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for p in paths:
+            z.write(p, p.name)
+    cards = [{"file": f"{job_id}/{p.name}", "label": r["label"], "dims": f"{r['w']} × {r['h']}"}
+             for p, r in zip(paths, renders)]
+    return render_template("result.html", pack=pack, cards=cards, zip_file=f"{job_id}/{zip_path.name}")
 
 
+# ------------------------------------------------------------------ файлы
+@app.get("/output/<path:filename>")
+def serve_output(filename):
+    return send_from_directory(OUTPUT_DIR, filename)
+
+
+@app.get("/assets/<path:filename>")
+def serve_asset(filename):
+    return send_from_directory(ASSETS_DIR, filename)
+
+
+@app.get("/packs/<pack_id>/assets/<path:filename>")
+def serve_pack_asset(pack_id, filename):
+    return send_from_directory(_pack_or_404(pack_id)["dir"] / "assets", filename)
+
+
+# ------------------------------------------------------------------ отправка в Telegram
 def _tg(method: str, chat_id: int, files: dict, data: dict):
     return requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/{method}",
                          data={"chat_id": chat_id, **data}, files=files, timeout=120)
@@ -300,18 +190,15 @@ def send_to_chat():
     if not pngs:
         return jsonify(ok=False, error="файлы не найдены"), 404
     try:
-        # 1) превью: альбомы по 10 фото (сжатые Telegram)
-        for i in range(0, len(pngs), 10):
+        for i in range(0, len(pngs), 10):  # альбомы по 10 фото (сжатые Telegram)
             chunk = pngs[i:i + 10]
             media = [{"type": "photo", "media": f"attach://f{n}"} for n in range(len(chunk))]
             files = {f"f{n}": (p.name, p.read_bytes()) for n, p in enumerate(chunk)}
-            r = _tg("sendMediaGroup", chat_id, files, {"media": json.dumps(media)})
-            if not r.ok:  # например, файл >10 МБ — шлём документами
-                for p in chunk:
+            if not _tg("sendMediaGroup", chat_id, files, {"media": json.dumps(media)}).ok:
+                for p in chunk:  # например, файл >10 МБ — шлём документами
                     _tg("sendDocument", chat_id, {"document": (p.name, p.read_bytes())}, {})
-        # 2) оригиналы без сжатия — одним zip
         zp = job_dir / "enso-cards.zip"
-        if zp.exists():
+        if zp.exists():  # оригиналы без сжатия
             _tg("sendDocument", chat_id, {"document": (zp.name, zp.read_bytes())},
                 {"caption": "Оригиналы без сжатия"})
     except requests.RequestException as e:
@@ -319,80 +206,6 @@ def send_to_chat():
     return jsonify(ok=True)
 
 
-# ======================= ПРЕДПРОСМОТР (без Chromium) =======================
-# Шаблоны — это обычный HTML, поэтому превью рисуется прямо в браузере из
-# Jinja-рендера. Картинки PNG (Playwright) делаются только в /generate.
-_env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)))
-_RING_URI = to_data_uri(RING_ASSET) if RING_ASSET.exists() else None
-_PLACEHOLDER = "data:image/svg+xml;utf8," + quote(
-    "<svg xmlns='http://www.w3.org/2000/svg' width='800' height='600'>"
-    "<rect width='800' height='600' fill='#23221a'/>"
-    "<text x='400' y='310' fill='#8a8676' font-size='40' text-anchor='middle' "
-    "font-family='sans-serif'>Фото проекта</text></svg>")
-PREVIEW_MAX_ITEMS = 5
-
-
-def _lite(html: str) -> str:
-    """Кольцо (~260 КБ base64) заменяем короткой ссылкой — браузер кэширует."""
-    return html.replace(_RING_URI, "/assets/" + RING_ASSET.name) if _RING_URI else html
-
-
-@app.get("/assets/<path:filename>")
-def serve_asset(filename):
-    return send_from_directory(ASSETS_DIR, filename)
-
-
-@app.post("/preview")
-def preview():
-    b = request.get_json(silent=True) or {}
-    card_type = "startup" if b.get("card_type") == "startup" else "github"
-    mode = b.get("mode", "single")
-    raw = (b.get("json_data") or "").strip()
-    sel = b.get("templates")
-    sel = _sel(sel, card_type) if sel else ([] if sel == [] else None)
-    photo = b.get("photo") if str(b.get("photo", "")).startswith("data:image/") else _PLACEHOLDER
-    if not raw:
-        return jsonify(ok=True, cards=[])
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        return jsonify(ok=False, error=f"Невалидный JSON: {e}")
-
-    cards = []  # (подпись, шаблон, контекст, ширина, высота)
-    try:
-        if card_type == "startup":
-            if isinstance(data, list):
-                raise ManualDataError("Для стартапа нужен один JSON-объект, не список.")
-            pkg = build_startup_package(data)
-            for it in startup_items(pkg, sel):
-                cards.append((it["label"], it["template"], it["ctx"], it["w"], it["h"]))
-        else:
-            if mode == "batch":
-                items = parse_batch_items(raw)[:PREVIEW_MAX_ITEMS]
-            elif isinstance(data, list):
-                raise ManualDataError("Это список — переключитесь на «Подборка».")
-            else:
-                items = [data]
-            for n, item in enumerate(items, start=1):
-                ctx = build_context_manual(item, RING_ASSET, n, len(items), mode == "batch")
-                ctx["photo_data_uri"] = photo
-                for t in github_templates(sel):
-                    cards.append((f"{ctx['project_name']} · {t['name']}", t["file"], ctx, t["w"], t["h"]))
-        out = [{"label": lb, "w": w, "h": h, "html": _lite(_env.get_template(tpl).render(**ctx))}
-               for lb, tpl, ctx, w, h in cards]
-    except ManualDataError as e:
-        return jsonify(ok=False, error=str(e))
-    except Exception as e:  # noqa: BLE001 — неполный JSON не должен ронять превью
-        return jsonify(ok=False, error=f"Не удалось построить превью: {e}")
-    return jsonify(ok=True, cards=out)
-
-
-@app.get("/output/<path:filename>")
-def serve_output(filename):
-    return send_from_directory(OUTPUT_DIR, filename)
-
-
 if __name__ == "__main__":
-    # use_reloader=False обязательно: реген пишет PNG/zip прямо в ui_output/
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")),
-            debug=False, threaded=True)
+    # use_reloader=False обязательно: генерация пишет PNG/zip прямо в ui_output/
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "5000")), debug=False, threaded=True)
