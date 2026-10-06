@@ -17,7 +17,7 @@ import requests
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory
 
 import packs as P
-from generate import ASSETS_DIR, ManualDataError, to_data_uri
+from core import ASSETS_DIR, ManualDataError, to_data_uri
 
 BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "ui_output"

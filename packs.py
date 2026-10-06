@@ -6,8 +6,9 @@ from urllib.parse import quote
 
 from jinja2 import Environment, FileSystemLoader
 
-from generate import (
+from core import (
     RING_ASSET,
+    RING_URI,
     ManualDataError,
     build_context_manual,
     build_startup_package,
@@ -80,7 +81,7 @@ def _b_default(pack, data, photo):
 def _b_github(pack, data, photo):
     items, out = _items(data), []
     for n, it in enumerate(items, start=1):
-        ctx = build_context_manual(it, RING_ASSET, n, len(items), len(items) > 1)
+        ctx = build_context_manual(it, n, len(items), len(items) > 1)
         ctx["photo_data_uri"] = photo or PLACEHOLDER
         label = pack["name"] if len(items) == 1 else f"{ctx['project_name']}"
         out.append(_r(pack["file"], ctx, pack["width"], pack["height"], label))
@@ -134,13 +135,10 @@ def _env(pack: dict, preview: bool) -> Environment:
     return _envs[key]
 
 
-_RING_URI = to_data_uri(RING_ASSET) if RING_ASSET.exists() else None
-
-
 def render_html(pack: dict, r: dict, preview: bool = False) -> str:
     html = _env(pack, preview).get_template(r["template"]).render(**r["ctx"])
-    if preview and _RING_URI:  # 260 КБ base64 → короткая ссылка, браузер кэширует
-        html = html.replace(_RING_URI, "/assets/" + RING_ASSET.name)
+    if preview and RING_URI:  # 260 КБ base64 → короткая ссылка, браузер кэширует
+        html = html.replace(RING_URI, "/assets/" + RING_ASSET.name)
     return html
 
 
